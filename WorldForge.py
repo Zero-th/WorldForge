@@ -1,5 +1,5 @@
 from FrgSet import *
-# Define constants for screen dimensions, colors, and other configurations as needed
+
 SUPPORTER_SCALE = 1.2
 SUPPORTER_START_X = 115
 SUPPORTER_START_Y = 150
@@ -434,14 +434,14 @@ class HomeScreen:
 
     def load_recently_opened_files(self):
         try:
-            with open("rcf.forge", "r") as file:
+            with open("rcf.kosmic", "r") as file:
                 self.recently_opened_files = json.load(file)
                 if isinstance(self.recently_opened_files, dict):
                     self.recently_opened_files = list(self.recently_opened_files.keys())
                 file.close()
         except FileNotFoundError:
             # Handle the case where the JSON file doesn't exist yet
-            with open("rcf.forge", "w") as file:
+            with open("rcf.kosmic", "w") as file:
                 data = {"_--_": "_____________"}
                 json.dump(data, file)
                 file.close()
@@ -451,7 +451,7 @@ class HomeScreen:
         if len(self.recently_opened_files) > 12:
             print("too many recents")
             self.recently_opened_files.pop()
-        with open("rcf.forge", "w") as file:
+        with open("rcf.kosmic", "w") as file:
             json.dump(self.recently_opened_files, file, indent=4)
 
     def add_to_recently_opened(self, file_path):
@@ -702,7 +702,7 @@ class HomeScreen:
                     self.handle_key(event.key)
                 elif event.type == pygame.DROPFILE:
                     self.handle_drop_event(event.file)
-                    self.tileset_path = event.file
+                    self.tilesetPath = event.file
 
             self.screen.fill(self.main_color)
 
@@ -768,15 +768,25 @@ class HomeScreen:
                             i += 1
                     if i == len(self.text_inputs) - 2:
                         self.empty_fields = False
-                        save_destination = f"{self.text_inputs['Filepath']['value']}/{self.text_inputs['Filename']['value']}.forge"
+                        save_destination = f"{self.text_inputs['Filepath']['value']}/{self.text_inputs['Filename']['value']}.kosmic"
+                        map_data = {
+                            "name": self.text_inputs['Filename']['value'],
+                            "tileSize": self.text_inputs['Tile Size']['value'],
+                            "tilesetPath": self.tilesetPath,
+                            "width": self.text_inputs['Map Width']['value'],
+                            "height": self.text_inputs['Map Height']['value'],
+                            "tileMap":{"Layer0":{}},
+                            "offGrid": [],
+                        }
                         # Add the recently opened file to the list
                         self.add_to_recently_opened(save_destination)
                         # Save the updated list of recently opened files
                         self.save_recently_opened_files()
                         self.initialize_level_editor(
-                            self.tileset_path,
+                            self.tilesetPath,
                             self.desired_tileset,
                             int(self.text_inputs["Tile Size"]["value"]),
+                            map_data,
                             int(self.text_inputs["Map Width"]["value"]),
                             int(self.text_inputs["Map Height"]["value"]),
                             [],
@@ -800,17 +810,19 @@ class HomeScreen:
                         # Load the JSON data and initialize the editor with it
                         json_data = json.load(file)
                         # tilesize = self.text_inputs['Tile Size']
-                        tilesize = json_data["tilesize"]
-                        tileset_path = json_data["tileset_path"]
+                        tilesize = json_data["tileSize"]
+                        tilesetPath = json_data["tilesetPath"]
                         map_width = json_data["width"]
                         map_height = json_data["height"]
-                        offgrid = json_data["offgrid"]
+                        offgrid = json_data["offGrid"]
                         map_name = json_data["name"]
+                        map_data = json_data["tileMap"]
                         save_destination = file_path  # Use the selected JSON file path
                         self.initialize_level_editor(
-                            tileset_path,
+                            tilesetPath,
                             self.desired_tileset,
                             tilesize,
+                            map_data,
                             map_width,
                             map_height,
                             offgrid,
@@ -859,24 +871,26 @@ class HomeScreen:
     def open_json_file(self):
         json_path = self.open_file_dialog()
         if json_path != None:
-            if json_path.endswith(".forge"):
+            if json_path.endswith(".kosmic"):
                 try:
                     with open(json_path, "r") as file:
                         # Load the JSON data and initialize the editor with it
                         json_data = json.load(file)
-                        tilesize = json_data["tilesize"]
-                        tileset_path = json_data["tileset_path"]
+                        tilesize = json_data["tileSize"]
+                        tilesetPath = json_data["tilesetPath"]
                         map_width = json_data["width"]
                         map_height = json_data["height"]
-                        offgrid = json_data["offgrid"]
+                        offgrid = json_data["offGrid"]
                         map_name = json_data["name"]
+                        map_data = json_data["tileMap"]
                         save_destination = json_path  # Use the selected JSON file path
                         self.recently_opened_files.insert(0, json_path)
                         self.save_recently_opened_files()
                         self.initialize_level_editor(
-                            tileset_path,
+                            tilesetPath,
                             self.desired_tileset,
                             tilesize,
+                            map_data,
                             map_width,
                             map_height,
                             offgrid,
@@ -906,9 +920,10 @@ class HomeScreen:
 
     def initialize_level_editor(
         self,
-        tileset_path,
+        tilesetPath,
         tileset,
         tilesize,
+        map_data,
         map_width,
         map_height,
         offgrid,
@@ -917,7 +932,7 @@ class HomeScreen:
     ):
         # Now, you can create an instance of your LevelEditor class with the entered parameters
         level_editor = LevelEditor(
-            tileset_path,
+            tilesetPath,
             tileset,
             int(map_width),
             int(map_height),
@@ -925,6 +940,7 @@ class HomeScreen:
             save_destination,
             map_name,
         )
+        level_editor.tilemap.tilemap = map_data
         level_editor.tilemap.offgrid_tiles = offgrid
         # Add the recently opened file to the list
         self.add_to_recently_opened(save_destination)
@@ -937,7 +953,7 @@ class LevelEditor:
     
     def __init__(
         self,
-        tileset_path,
+        tilesetPath,
         tileset,
         map_width,
         map_height,
@@ -957,17 +973,18 @@ class LevelEditor:
         self.map_height = int(map_height)
         self.edit_area_width = 0
         self.edit_area_height = 0
-        self.setup_assets(tileset=tileset, tileset_path=tileset_path, tilesize=tilesize)
+        self.setup_assets(tileset=tileset, tilesetPath=tilesetPath, tilesize=tilesize)
         self.tilesize = tilesize
-        self.tileset_path = tileset_path
+        self.tilesetPath = tilesetPath
         self.tile_group = 0
         self.tile_id = 0
         self.tilemap = Tilemap(map_name, self, self.assets, tile_size=int(tilesize))
 
-        try:
-            self.load(self.map_path)
-        except:
-            print("no map")
+        self.load(self.map_path)
+        # try:
+        #     self.load(self.map_path)
+        # except:
+        #     print("no map")
 
         self.scroll = [0, 0]
         self.clicking = False
@@ -982,6 +999,7 @@ class LevelEditor:
         self.dragging_start_pos = None
         self.middle_mouse_dragging = False
         self.middle_mouse_drag_start = None
+        self.current_layer = 0
 
         # List to keep track of tile placements for undo
         self.last_state = None
@@ -990,7 +1008,8 @@ class LevelEditor:
         self.default_redo = []
         self.tile_check = []
         self.redo_history = []
-        self.undo_history = [self.tilemap.tilemap.copy()]
+        self.undo_history = []
+        # self.undo_history = [self.tilemap.tilemap[f'Layer{self.current_layer}'].copy()]
         self.fill_undo_history = []
 
         # variables to track current level size
@@ -999,6 +1018,8 @@ class LevelEditor:
 
         # hud settings
         self.hud_font_size = 24
+        self.hud_buttons = ["+", "<-", "->", "-"]
+        self.layer_menu_item_height = 80
 
         # Tile view pane settings
         self.tileset_viewport = {
@@ -1010,23 +1031,24 @@ class LevelEditor:
         self.tile_view_y = self.tilesize
 
         if (
-            get_image(self.tileset_path).get_width() <= 100
-            and get_image(self.tileset_path).get_height() <= 100
+            get_image(self.tilesetPath).get_width() <= 100
+            and get_image(self.tilesetPath).get_height() <= 100
         ):
-            self.tile_view_width = 180  # Adjust the width as needed.
+            self.tile_view_width = 200  # Adjust the width as needed.
             self.tile_size_scale = (
                 4.0  # Controls the size of individual tiles within the viewport
             )
         else:
             self.tile_view_width = 450  # Adjust the width as needed.
             self.tile_size_scale = (
-                1.0  # Controls the size of individual tiles within the viewport
+                3  # Controls the size of individual tiles within the viewport
             )
 
         self.tile_view_height = self.screen.get_size()[1]
         self.tileset_scale = 1.0  # Controls the scale of the entire tileset viewport
         self.tile_view_min = False
         self.tile_view_max = False
+        
 
         # Dropdown menu settings
         self.dropdown_open = False
@@ -1061,9 +1083,9 @@ class LevelEditor:
         self.screen_size = self.screen.get_size()
         self.clock = pygame.time.Clock()
 
-    def setup_assets(self, tileset, tileset_path, tilesize):
+    def setup_assets(self, tileset, tilesetPath, tilesize):
         if isinstance(tileset, type(None)):
-            self.assets = {"tileset": cut_graphics(get_image(tileset_path), tilesize)}
+            self.assets = {"tileset": cut_graphics(get_image(tilesetPath), tilesize)}
             tile_list = list(self.assets)
             self.tile_list = tile_list
         else:
@@ -1108,30 +1130,30 @@ class LevelEditor:
 
     def export_as_png(self):
         self.tilemap.export_as_png(
-            self.map_path.removesuffix(f"/{self.map_name}.forge")
+            self.map_path.removesuffix(f"/{self.map_name}.kosmic")
         )
 
     def undo(self):
         if len(self.undo_history) > 0:
             print("undoing...")
-            self.last_state = self.tilemap.tilemap.copy()
+            self.last_state = self.tilemap.tilemap[f'Layer{self.current_layer}'].copy()
             # # Save the current tilemap state for redo
-            self.redo_history.append(self.tilemap.tilemap.copy())
+            self.redo_history.append(self.tilemap.tilemap[f'Layer{self.current_layer}'].copy())
             # # Restore the previous state
             old_state = self.undo_history.pop()
-            self.tilemap.tilemap = old_state
+            self.tilemap.tilemap[f'Layer{self.current_layer}'] = old_state
 
             if len(self.old_tile_ids) > 0 and len(self.old_tile) > 0:
                 for tile_id in self.old_tile_ids:
                     self.old_tile_ids.pop()
                     old_tile = self.old_tile.pop()
                     if (
-                        self.tilemap.tilemap[
+                        self.tilemap.tilemap[f'Layer{self.current_layer}'][
                             f"{old_tile['position'][0]};{old_tile['position'][1]}"
                         ]["id"]
                         != tile_id
                     ):
-                        self.tilemap.tilemap[
+                        self.tilemap.tilemap[f'Layer{self.current_layer}'][
                             f"{old_tile['position'][0]};{old_tile['position'][1]}"
                         ]["id"] = tile_id
             else:
@@ -1143,11 +1165,11 @@ class LevelEditor:
             # Save the current tilemap state for undo
             self.copy_undo_state()
             # Restore the next state (if available) for redo
-            self.tilemap.tilemap = self.redo_history.pop()
+            self.tilemap.tilemap[f'Layer{self.current_layer}'] = self.redo_history.pop()
 
     def fill_empty_space(self, start_pos):
         # Check if the selected tile is already filled or out of bounds
-        if self.tilemap.tilemap.get(str(start_pos), None) is not None:
+        if self.tilemap.tilemap[f'Layer{self.current_layer}'].get(str(start_pos), None) is not None:
             return
 
         # Define a stack for the flood fill algorithm
@@ -1163,9 +1185,9 @@ class LevelEditor:
             # Check if the tile is within the edit area bounds
             if 0 <= x < self.edit_area_width and 0 <= y < self.edit_area_height:
                 # Check if the tile is empty and can be filled
-                if self.tilemap.tilemap.get(f"{x};{y}", None) is None:
+                if self.tilemap.tilemap[f'Layer{self.current_layer}'].get(f"{x};{y}", None) is None:
                     # Place the active tile in the current position
-                    self.tilemap.tilemap[f"{x};{y}"] = {
+                    self.tilemap.tilemap[f'Layer{self.current_layer}'][f"{x};{y}"] = {
                         "tileset": self.tile_list[self.tile_group],
                         "id": active_tile_id,
                         "position": (x, y),
@@ -1191,7 +1213,7 @@ class LevelEditor:
     def fill_bucket(self):
         if self.ongrid and self.fill:
             # Check if the current tile is empty
-            if self.tilemap.tilemap.get(str(self.selected_tile_pos), None) is None:
+            if self.tilemap.tilemap[f'Layer{self.current_layer}'].get(str(self.selected_tile_pos), None) is None:
                 # Fill empty space around the clicked position
                 self.fill_empty_space(self.selected_tile_pos)
         self.clicking = False
@@ -1215,6 +1237,13 @@ class LevelEditor:
         self.scroll[0] = min(max(self.scroll[0], 0), max_scroll_x)
         self.scroll[1] = min(max(self.scroll[1], 0), max_scroll_y)
 
+        if self.current_layer < 0:
+            self.current_layer = 0
+
+        # print(self.current_layer, 'current layer\n')
+        # print(self.tilemap.tilemap,'\n')
+        # print(self.tile_id)
+
     def draw_tile_selection_pane(self, surface: PYSURFACE):
         self.mouse_position = (
             self.mouse_position[0] * self.zoom,
@@ -1234,7 +1263,7 @@ class LevelEditor:
         tiles_per_row = max(1, int(self.tile_view_width / tile_slot_size_with_scale))
 
         # Calculate the starting position for the first tile taking into account the viewport position.
-        start_x = self.tile_view_x + 16 * self.tileset_scale
+        start_x = self.tile_view_x + 4 * self.tileset_scale
         start_y = (
             self.tile_view_y + 48 * self.tileset_scale - self.tileset_viewport["y"]
         )
@@ -1292,7 +1321,6 @@ class LevelEditor:
                 <= self.tilesize + 48
             ):
                 self.tile_view_min = True
-                print(tile_rect.y)
             else:
                 self.tile_view_min = False
             return (
@@ -1304,7 +1332,6 @@ class LevelEditor:
             # if start_y >= -len(self.tile_list):
             if tile_rect.y >= surface.get_height():
                 self.tile_view_max = True
-                print(tile_rect.y)
             else:
                 self.tile_view_max = False
             # return -len(self.tile_list)
@@ -1313,8 +1340,6 @@ class LevelEditor:
         start_y = clamp(start_y, min_scroll(), max_scroll())
 
         # print(self.tile_view_min, "min", " | ", self.tile_view_max, "max")
-
-        
 
     def draw_hud(self, surface: PYSURFACE):
         # Background for the HUD
@@ -1343,11 +1368,33 @@ class LevelEditor:
             surface,
             "./slkscr.ttf",
             map_dimensions,
-            VECTOR2((125, 25)),
+            VECTOR2((160, 25)),
             size=self.hud_font_size,
             color=THEMES[Chosen_Theme]['text'],
         )
 
+        # Display amount of layers
+        stg_status = f"LC:{len(self.tilemap.tilemap)}"
+        draw_text(
+            surface,
+            "./slkscr.ttf",
+            stg_status,
+            VECTOR2((830, 25)),
+            size=self.hud_font_size,
+            color=THEMES[Chosen_Theme]['text'],
+        )
+
+        # Display current layer
+        stg_status = f"LN:{self.current_layer+1}"
+        draw_text(
+            surface,
+            "./slkscr.ttf",
+            stg_status,
+            VECTOR2((900, 25)),
+            size=self.hud_font_size,
+            color=THEMES[Chosen_Theme]['text'],
+        )
+        
         # Display snap to grid status
         stg_status = f"STG:{self.ongrid}"
         draw_text(
@@ -1383,10 +1430,141 @@ class LevelEditor:
             color=THEMES[Chosen_Theme]['text'],
         )
 
+
+        # Calculate the layer menu menu position
+        layer_menu_x = 1545
+        layer_menu_y = 370 - (len(self.hud_buttons) * self.layer_menu_item_height)
+        layer_menu_width = 40
+
+        # Create the layer menu menu rectangle
+        self.layer_menu_rect = pygame.Rect(
+            layer_menu_x + 15,
+            layer_menu_y,
+            layer_menu_width,
+            len(self.hud_buttons) * self.layer_menu_item_height,
+        )
+
+        # Draw the layer menu menu background
+        pygame.draw.rect(self.screen, THEMES[Chosen_Theme]['main'], self.layer_menu_rect)
+
+        for i, item in enumerate(self.hud_buttons):
+            item_rect = pygame.Rect(
+                layer_menu_x + 15,
+                layer_menu_y + i * self.layer_menu_item_height,
+                layer_menu_width,
+                self.layer_menu_item_height,
+            )
+
+            # Check if the mouse is over the item
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            if item_rect.collidepoint(mouse_x, mouse_y):
+                # Change item's color when hovered
+                item_color = THEMES[Chosen_Theme]['hover']  # Background color when hovered
+                text_color = THEMES[Chosen_Theme]['text']  # Text color when hovered
+                if item == '+':
+                    draw_text(
+                        self.screen,
+                        "./slkscr.ttf",
+                        'ADD LAYER',
+                        VECTOR2(item_rect.topleft) - VECTOR2(48, -32),
+                        size=14,
+                        color=THEMES[Chosen_Theme]['text'],  # Use the calculated text color
+                    )
+                if item == '<-' and self.current_layer > 0:
+                    draw_text(
+                        self.screen,
+                        "./slkscr.ttf",
+                        f'TO LAYER {self.current_layer-1}',
+                        VECTOR2(item_rect.topleft) - VECTOR2(48, -32),
+                        size=14,
+                        color=THEMES[Chosen_Theme]['text'],  # Use the calculated text color
+                    )
+                if item == '->' and len(self.tilemap.tilemap) > self.current_layer+1:
+                    draw_text(
+                        self.screen,
+                        "./slkscr.ttf",
+                        f'TO LAYER {self.current_layer+1}',
+                        VECTOR2(item_rect.topleft) - VECTOR2(48, -32),
+                        size=14,
+                        color=THEMES[Chosen_Theme]['text'],  # Use the calculated text color
+                    )
+                if item == '-':
+                    draw_text(
+                        self.screen,
+                        "./slkscr.ttf",
+                        'DELETE LAYER',
+                        VECTOR2(item_rect.topleft) - VECTOR2(56, -32),
+                        size=14,
+                        color=THEMES[Chosen_Theme]['text'],  # Use the calculated text color
+                    )
+            else:
+                item_color = THEMES[Chosen_Theme]['text']  # Default background color
+                text_color = THEMES[Chosen_Theme]['text']  # Default text color
+
+            pygame.draw.rect(self.screen, item_color, item_rect, 1)
+
+            # Calculate text position for center alignment
+            text_x = item_rect.centerx
+            text_y = item_rect.centery - 2
+
+            draw_text(
+                self.screen,
+                "./slkscr.ttf",
+                item,
+                VECTOR2((text_x, text_y)),
+                size=28,
+                color=THEMES[Chosen_Theme]['text'],  # Use the calculated text color
+            )
+
+        # Check for item clicks
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        if self.layer_menu_rect.collidepoint(mouse_x, mouse_y):
+            for event in pygame.event.get():
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Left mouse button
+                        clicked_item_index = (
+                            mouse_y - layer_menu_y
+                        ) // self.layer_menu_item_height
+                        if 0 <= clicked_item_index < len(self.hud_buttons):
+                            clicked_item = self.hud_buttons[clicked_item_index]
+
+                            if clicked_item == "+":
+                               self.addLayer()
+                            elif clicked_item == "<-":
+                                self.dwnLayer()
+                            elif clicked_item == "->":
+                                self.upLayer()
+                            elif clicked_item == "-":
+                               self.remLayer()
+
         # Load and display your logo
         logo = scale_images([pygame.image.load("./logo.png")], (128, 128))[0]
         logo.set_alpha(100)
         surface.blit(logo, (EDITOR_SCREEN_WIDTH - 120, EDITOR_SCREEN_HEIGHT - 140))
+
+    def upLayer(self):
+        if f'Layer{self.current_layer+1}' in self.tilemap.tilemap:
+            self.current_layer += 1
+
+    def dwnLayer(self):
+        if f'Layer{self.current_layer-1}' in self.tilemap.tilemap:
+            self.current_layer -= 1
+
+    def addLayer(self):
+        if len(self.tilemap.tilemap) + 1 <= 10:
+            self.current_layer += 1
+            if f'Layer{self.current_layer}' not in self.tilemap.tilemap:
+                self.tilemap.tilemap[f'Layer{self.current_layer}'] = {}
+        elif len(self.tilemap.tilemap) + 1 >= 10:
+            print('max layer count!')
+    
+    def remLayer(self):
+        if len(self.tilemap.tilemap) - 1 != 0:
+            self.current_layer -= 1
+            self.tilemap.tilemap.popitem()
+        else:
+            print('on base layer!')
+            pass
 
     def draw_dropdown_menu(self):
         if self.dropdown_open:
@@ -1465,7 +1643,7 @@ class LevelEditor:
                                     sys.exit()
 
     def copy_undo_state(self):
-        self.undo_history.append(self.tilemap.tilemap.copy())
+        self.undo_history.append(self.tilemap.tilemap[f'Layer{self.current_layer}'].copy())
 
     def render(self, surface: PYSURFACE):
         # fill background of editor area
@@ -1519,7 +1697,7 @@ class LevelEditor:
             tile_location = (
                 str(self.selected_tile_pos[0]) + ";" + str(self.selected_tile_pos[1])
             )
-            if tile_location not in self.tilemap.tilemap:
+            if tile_location not in self.tilemap.tilemap[f'Layer{self.current_layer}']:
                 placed_tile = {
                     "tileset": self.tile_list[self.tile_group],
                     "id": self.tile_id,
@@ -1530,18 +1708,28 @@ class LevelEditor:
                 }
                 self.tile_check.append(placed_tile["position"])
                 self.copy_undo_state()
-                self.tilemap.tilemap[tile_location] = {
+                self.tilemap.tilemap[f'Layer{self.current_layer}'][tile_location] = {
                     "tileset": self.tile_list[self.tile_group],
                     "id": self.tile_id,
                     "position": self.selected_tile_pos,
                 }
 
             elif (
-                tile_location in self.tilemap.tilemap
-                and self.tilemap.tilemap[tile_location]["id"] != self.tile_id
+                tile_location in self.tilemap.tilemap[f'Layer{self.current_layer}']
+                and self.tilemap.tilemap[f'Layer{self.current_layer}'][tile_location]["id"] != self.tile_id
             ):
                 self.copy_undo_state()
-                self.tilemap.tilemap[tile_location] = {
+                self.tilemap.tilemap[f'Layer{self.current_layer}'][tile_location] = {
+                    "tileset": self.tile_list[self.tile_group],
+                    "id": self.tile_id,
+                    "position": self.selected_tile_pos,
+                }
+            elif (
+                tile_location in self.tilemap.tilemap[f'Layer{self.current_layer}']
+                and self.tilemap.tilemap[f'Layer{self.current_layer}'][tile_location]["id"] != self.tile_id
+            ):
+                self.copy_undo_state()
+                self.tilemap.tilemap[f'Layer{self.current_layer}'][tile_location] = {
                     "tileset": self.tile_list[self.tile_group],
                     "id": self.tile_id,
                     "position": self.selected_tile_pos,
@@ -1551,7 +1739,7 @@ class LevelEditor:
             tile_location = (
                 str(self.selected_tile_pos[0]) + ";" + str(self.selected_tile_pos[1])
             )
-            if tile_location not in self.tilemap.tilemap:
+            if tile_location not in self.tilemap.tilemap[f'Layer{self.current_layer}']:
                 placed_tile = {
                     "tileset": self.tile_list[self.tile_group],
                     "id": self.tile_id,
@@ -1562,18 +1750,18 @@ class LevelEditor:
                 }
                 self.tile_check.append(placed_tile["position"])
                 self.copy_undo_state()
-                self.tilemap.tilemap[tile_location] = {
+                self.tilemap.tilemap[f'Layer{self.current_layer}'][tile_location] = {
                     "tileset": self.tile_list[self.tile_group],
                     "id": self.tile_id,
                     "position": self.selected_tile_pos,
                 }
 
             elif (
-                tile_location in self.tilemap.tilemap
-                and self.tilemap.tilemap[tile_location]["id"] != self.tile_id
+                tile_location in self.tilemap.tilemap[f'Layer{self.current_layer}']
+                and self.tilemap.tilemap[f'Layer{self.current_layer}'][tile_location]["id"] != self.tile_id
             ):
                 self.copy_undo_state()
-                self.tilemap.tilemap[tile_location] = {
+                self.tilemap.tilemap[f'Layer{self.current_layer}'][tile_location] = {
                     "tileset": self.tile_list[self.tile_group],
                     "id": self.tile_id,
                     "position": self.selected_tile_pos,
@@ -1584,9 +1772,9 @@ class LevelEditor:
             tile_location = (
                 str(self.selected_tile_pos[0]) + ";" + str(self.selected_tile_pos[1])
             )
-            if tile_location in self.tilemap.tilemap:
+            if tile_location in self.tilemap.tilemap[f'Layer{self.current_layer}']:
                 self.copy_undo_state()
-                del self.tilemap.tilemap[tile_location]
+                del self.tilemap.tilemap[f'Layer{self.current_layer}'][tile_location]
             for tile in self.tilemap.offgrid_tiles.copy():
                 tile_image = self.assets[tile["tileset"]][tile["id"]]
                 tile_rect = pygame.Rect(
@@ -1605,7 +1793,7 @@ class LevelEditor:
         current_tile_image.set_alpha(185)
 
         # render the tilemap
-        self.tilemap.render(surf=surface, offset=render_scroll)
+        self.tilemap.render(display_surf=self.screen,render_surf=surface, offset=render_scroll, zoom_factor=self.zoom)
 
         # render the next tile to be placed
         if self.ongrid:
@@ -1644,13 +1832,13 @@ class LevelEditor:
             with open(path, "w") as savefile:
                 json.dump(
                     {
-                        "tilemap": self.tilemap.tilemap,
                         "name": self.map_name,
-                        "tileset_path": self.tileset_path,
-                        "tilesize": self.tilemap.tile_size,
+                        "tileSize": self.tilesize,
+                        "tilesetPath": self.tilesetPath,
                         "width": self.map_width,
                         "height": self.map_height,
-                        "offgrid": self.tilemap.offgrid_tiles,
+                        "tileMap": self.tilemap.tilemap,
+                        "offGrid": self.tilemap.offgrid_tiles,
                     },
                     savefile,
                     indent=4,
@@ -1658,17 +1846,17 @@ class LevelEditor:
                 savefile.close()
             return True
         except FileNotFoundError:
-            os.mkdir(path.removesuffix(f"\{self.map_name}.forge"))
+            os.mkdir(path.removesuffix(f"\{self.map_name}.kosmic"))
             with open(path, "w") as savefile:
                 json.dump(
                     {
-                        "tilemap": self.tilemap.tilemap,
                         "name": self.map_name,
-                        "tileset_path": self.tileset_path,
-                        "tilesize": self.tilemap.tile_size,
+                        "tileSize": self.tilesize,
+                        "tilesetPath": self.tilesetPath,
                         "width": self.map_width,
                         "height": self.map_height,
-                        "offgrid": self.tilemap.offgrid_tiles,
+                        "tileMap": self.tilemap.tilemap,
+                        "offGrid": self.tilemap.offgrid_tiles,
                     },
                     savefile,
                     indent=4,
@@ -1678,12 +1866,30 @@ class LevelEditor:
             return True
 
     def load(self, path):
-        with open(path, "r") as savefile:
-            map_data = json.load(savefile)
+        try:
+            with open(path, "r") as savefile:
+                map_data = json.load(savefile)
 
-        self.tilemap.tilemap = map_data["tilemap"]
-        self.tile_size = map_data["tilesize"]
-        self.offgrid_tiles = map_data["offgrid"]
+            self.tilemap.tilemap = map_data["tileMap"]
+            self.tile_size = map_data["tileSize"]
+            self.offgrid_tiles = map_data["offGrid"]
+        except FileNotFoundError:
+            print('map data not present...\ncreating map data...\n')
+            map_data = {
+                "name": self.map_name,
+                "tileSize": self.tilesize,
+                "tilesetPath": self.tilesetPath,
+                "width": self.map_width,
+                "height": self.map_height,
+                "tileMap":{"Layer0":{}},
+                "offGrid": [],
+            }
+            with open(path, "w") as savefile:
+                json.dump(map_data, savefile, indent=4)
+            
+            self.tilemap.tilemap = map_data["tileMap"]
+            self.tile_size = map_data["tileSize"]
+            self.offgrid_tiles = map_data["offGrid"]
 
     def switch_to_home_screen(self):
         self.save(self.map_path)
@@ -1698,7 +1904,6 @@ class LevelEditor:
         while self.running:
             self.updates()
             self.render(self.scaled_screen)
-            print(self.tile_view_min, self.tile_view_max)
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
@@ -1728,7 +1933,7 @@ class LevelEditor:
                             self.clicking = False
 
                         if self.fill:
-                            self.fill_undo_history.append(self.tilemap.tilemap.copy())
+                            self.fill_undo_history.append(self.tilemap.tilemap[f'Layer{self.current_layer}'].copy())
                             self.fill_bucket()
 
                         # Check for left shift key and a different tile
@@ -1740,7 +1945,7 @@ class LevelEditor:
                         if not active_tile_changed:
                             # Save the tile placement in history if the active tile hasn't changed
                             self.undo_history.append(
-                                self.tilemap.tilemap.copy()
+                                self.tilemap.tilemap[f'Layer{self.current_layer}'].copy()
                             )
 
                         # print(self.selected_tile_pos, 'tile just placed')
@@ -1857,7 +2062,7 @@ class LevelEditor:
             # reset variables
             if (
                 self.clicking
-                and self.tilemap.tilemap != self.last_state
+                and self.tilemap.tilemap[f'Layer{self.current_layer}'] != self.last_state
                 and len(self.redo_history) > 0
             ):
                 self.redo_history = []
@@ -1865,6 +2070,7 @@ class LevelEditor:
             # debug
             # print("undo's", len(self.undo_history), "|", "redo's", len(self.redo_history), "|", "old tiles", len(self.old_tile), "|", "old tile id's", len(self.old_tile_ids))
             # print(self.cooldowns)
+            # print(self.tile_id)
 
             self.send_frame()
 
@@ -1872,12 +2078,3 @@ class LevelEditor:
 # Supporters().run()
 HomeScreen().run()
 
-
-"""
-FEATURES
-________
-
-SUPPORTER PAGE: { Title, slots similar to homescreen buttons for twitter/ig/user handles, icon next to names indicating a heart, ig or twitter, *eventually scrollable*, clickable link to itch page my twitter the repo and cursework discord }  ( icon will be a heart with the cursework eye on it )  **** DISPLAY ON HOMESCREEN ****
-
-
-"""
